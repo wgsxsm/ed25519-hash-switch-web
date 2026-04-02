@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ed25519-BLAKE2b / SHA-512 签名工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import * as ed from 'https://esm.sh/@noble/ed25519@2';
+    import { blake2b } from 'https://esm.sh/@noble/hashes@1/blake2';
+    import { sha512 } from 'https://esm.sh/@noble/hashes@1/sha512';
+    import { bytesToHex, hexToBytes, utf8ToBytes } from 'https://esm.sh/@noble/hashes@1/utils';
+
+    let currentHashFn = sha512;
+    let currentPrivateKey = null;
+    let currentPublicKey = null;
+
+    function switchHash(mode) {
+      if (mode === 'blake2b') {
+        currentHashFn = (msg) => blake2b(msg, { dkLen: 64 });
+        document.getElementById('hashMode').innerHTML = `
+          <span class="px-3 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">BLAKE2b-512</span>
+          <span class="text-amber-400 text-sm">（Nano / python-ed25519-blake2b 兼容）</span>`;
+      } else {
+        currentHashFn = sha512;
+        document.getElementById('hashMode').innerHTML = `
+          <span class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full">SHA-512</span>
+          <span class="text-blue-400 text-sm">（标准 Ed25519 / FourQ-SchnorrQ 风格）</span>`;
+      }
+      ed.etc.hash = currentHashFn;
+    }
+
+    async function generateKeypair() {
+      try {
+        const privKey = ed.utils.randomPrivateKey();
+        const pubKey = await ed.getPublicKey(privKey);
+
+        currentPrivateKey = privKey;
+        currentPublicKey = pubKey;
+
+        document.getElementById('privKey').textContent = bytesToHex(privKey);
+        document.getElementById('pubKey').textContent = bytesToHex(pubKey);
+        document.getElementById('keypairCard').classList.remove('hidden');
+      } catch (e) {
+        alert('生成失败：' + e.message);
+      }
+    }
+
+    async function signMessage() {
+      if (!currentPrivateKey) return alert('请先生成密钥对！');
+      const msg = document.getElementById('signMessage').value.trim();
+      if (!msg) return alert('请输入消息！');
+
+      try {
+        const sig = await ed.sign(utf8ToBytes(msg), currentPrivateKey);
+        document.getElementById('signatureResult').textContent = bytesToHex(sig);
+        document.getElementById('signResultCard').classList.remove('hidden');
+      } catch (e) {
+        alert('签名失败：' + e.message);
+      }
+    }
+
+    async function verifySignature() {
+      const pub = document.getElementById('verifyPub').value.trim();
+      const sig = document.getElementById('verifySig').value.trim();
+      const msg = document.getElementById('verifyMsg').value.trim();
+
+      if (!pub || !sig || !msg) return alert('请填写完整！');
+
+      try {
+        const valid = await ed.verify(hexToBytes(sig), utf8ToBytes(msg), hexToBytes(pub));
+        const el = document.getElementById('verifyResult');
+        el.classList.remove('hidden');
+        el.innerHTML = valid 
+          ? `<div class="flex items-center justify-center gap-2 text-green-400"><span class="text-3xl">✓</span><span class="font-bold text-xl">验证通过</span></div>` 
+          : `<div class="flex items-center justify-center gap-2 text-red-400"><span class="text-3xl">✗</span><span class="font-bold text-xl">验证失败</span></div>`;
+      } catch (e) {
+        alert('验证出错：' + e.message);
+      }
+    }
+
+    function copy(id) {
+      navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => {
+        const btn = event.target;
+        const original = btn.textContent;
+        btn.textContent = '已复制 ✓';
+        setTimeout(() => btn.textContent = original, 1500);
+      });
+    }
+
+    window.onload = () => {
+      ed.etc.hash = sha512; // 默认 SHA-512
+      document.getElementById('generateBtn').addEventListener('click', generateKeypair);
+      document.getElementById('signBtn').addEventListener('click', signMessage);
+      document.getElementById('verifyBtn').addEventListener('click', verifySignature);
+      // 默认显示 SHA-512
+      switchHash('sha512');
+    };
+  </script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 font-sans min-h-screen">
+  <!-- Header - 与 fourq-schnorrq-web 完全一致风格 -->
+  <div class="border-b border-zinc-800 bg-zinc-900">
+    <div class="max-w-4xl mx-auto px-8 py-6 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl">E</div>
+        <div>
+          <h1 class="text-3xl font-bold tracking-tight">Ed25519 签名工具</h1>
+          <p class="text-zinc-400 text-sm">支持 SHA-512 ↔ BLAKE2b-512 动态切换</p>
+        </div>
+      </div>
+      <a href="https://github.com/wgsxsm/fourq-schnorrq-web" target="_blank"
+         class="flex items-center gap-2 px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-3xl text-sm font-medium transition">
+        <span>参考项目</span>
+        <span class="text-emerald-400">fourq-schnorrq-web</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto px-8 py-10">
+
+    <!-- Hash Switch - 醒目卡片 -->
+    <div class="bg-zinc-900 border border-zinc-700 rounded-3xl p-6 mb-10">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <span class="uppercase text-xs tracking-widest font-medium text-zinc-400">当前哈希算法</span>
+          <div id="hashMode" class="flex items-center gap-3"></div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="switchHash('sha512')" 
+                  class="flex-1 md:flex-none px-8 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 font-medium transition flex items-center justify-center gap-2">
+            <span>SHA-512</span>
+          </button>
+          <button onclick="switchHash('blake2b')" 
+                  class="flex-1 md:flex-none px-8 py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 font-medium transition flex items-center justify-center gap-2">
+            <span>BLAKE2b-512</span>
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-zinc-400 mt-4">切换后所有签名/验证立即生效 • 兼容 Nano / python-ed25519-blake2b</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-8">
+
+      <!-- 1. 生成密钥对 -->
+      <div class="md:col-span-1 bg-zinc-900 border border-zinc-700 rounded-3xl p-8 flex flex-col">
+        <div class="flex items-center gap-3 mb-6">
+          <div class="w-8 h-8 bg-emerald-500 text-white rounded-2xl flex items-center justify-center font-bold">1</div>
+          <h2 class="text-2xl font-semibold">生成密钥对</h2>
+        </div>
+        <button id="generateBtn"
+                class="mt-auto w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-2xl text-lg transition flex items-center justify-center gap-2">
+          <span>生成新密钥对</span>
+        </button>
+
+        <div id="keypairCard" class="hidden mt-8 space-y-6">
+          <div>
+            <div class="text-zinc-400 text-xs mb-1">私钥（32 字节）</div>
+            <div class="relative">
+              <code id="privKey" class="block bg-black p-4 rounded-2xl font-mono text-emerald-300 text-sm break-all"></code>
+              <button onclick="copy('privKey')" class="absolute top-3 right-3 px-4 py-1 bg-zinc-800 hover:bg-zinc-700 text-xs rounded-xl">复制</button>
+            </div>
+          </div>
+          <div>
+            <div class="text-zinc-400 text-xs mb-1">公钥（32 字节）</div>
+            <div class="relative">
+              <code id="pubKey" class="block bg-black p-4 rounded-2xl font-mono text-sky-300 text-sm break-all"></code>
+              <button onclick="copy('pubKey')" class="absolute top-3 right-3 px-4 py-1 bg-zinc-800 hover:bg-zinc-700 text-xs rounded-xl">复制</button>
+            </div>
+          </div>
+          <p class="text-amber-400 text-xs">⚠️ 私钥请立即备份，泄露即永久丢失</p>
+        </div>
+      </div>
+
+      <!-- 2. 签名 -->
+      <div class="md:col-span-1 bg-zinc-900 border border-zinc-700 rounded-3xl p-8 flex flex-col">
+        <div class="flex items-center gap-3 mb-6">
+          <div class="w-8 h-8 bg-orange-500 text-white rounded-2xl flex items-center justify-center font-bold">2</div>
+          <h2 class="text-2xl font-semibold">签名消息</h2>
+        </div>
+        <textarea id="signMessage" rows="5"
+                  class="flex-1 bg-black border border-zinc-700 focus:border-orange-400 rounded-3xl p-5 font-mono text-sm resize-none"
+                  placeholder="在此输入要签名的任意消息..."></textarea>
+        <button id="signBtn"
+                class="mt-6 w-full py-4 bg-orange-600 hover:bg-orange-500 text-white font-semibold rounded-2xl text-lg transition">
+          执行签名
+        </button>
+
+        <div id="signResultCard" class="hidden mt-8">
+          <div class="text-zinc-400 text-xs mb-1">签名结果（64 字节）</div>
+          <div class="relative">
+            <code id="signatureResult" class="block bg-black p-5 rounded-3xl font-mono text-amber-300 text-sm break-all"></code>
+            <button onclick="copy('signatureResult')" class="absolute top-4 right-4 px-4 py-1 bg-zinc-800 hover:bg-zinc-700 text-xs rounded-xl">复制</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 验证 -->
+      <div class="md:col-span-1 bg-zinc-900 border border-zinc-700 rounded-3xl p-8 flex flex-col">
+        <div class="flex items-center gap-3 mb-6">
+          <div class="w-8 h-8 bg-purple-500 text-white rounded-2xl flex items-center justify-center font-bold">3</div>
+          <h2 class="text-2xl font-semibold">验证签名</h2>
+        </div>
+        
+        <input id="verifyPub" type="text" placeholder="公钥 (32 字节 hex)"
+               class="w-full bg-black border border-zinc-700 focus:border-purple-400 rounded-3xl px-5 py-4 mb-4 font-mono text-sm">
+        
+        <input id="verifySig" type="text" placeholder="签名 (64 字节 hex)"
+               class="w-full bg-black border border-zinc-700 focus:border-purple-400 rounded-3xl px-5 py-4 mb-4 font-mono text-sm">
+        
+        <textarea id="verifyMsg" rows="3" placeholder="原始消息..."
+                  class="w-full bg-black border border-zinc-700 focus:border-purple-400 rounded-3xl px-5 py-4 font-mono text-sm"></textarea>
+        
+        <button id="verifyBtn"
+                class="mt-6 w-full py-4 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-2xl text-lg transition">
+          执行验证
+        </button>
+
+        <div id="verifyResult" class="hidden mt-8 min-h-[80px] flex items-center justify-center rounded-3xl border border-zinc-700"></div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="mt-16 text-center text-zinc-500 text-xs flex items-center justify-center gap-8">
+      <div>纯前端 • @noble/ed25519 + @noble/hashes</div>
+      <div class="flex items-center gap-1">
+        <span>风格参考</span>
+        <a href="https://github.com/wgsxsm/fourq-schnorrq-web" target="_blank" class="underline">fourq-schnorrq-web</a>
+      </div>
+      <div>可直接部署到 GitHub Pages</div>
+    </div>
+  </div>
+</body>
+</html>
