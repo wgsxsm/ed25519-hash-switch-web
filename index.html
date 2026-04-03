@@ -11,21 +11,22 @@
     import { sha512 } from 'https://esm.sh/@noble/hashes@1/sha512';
     import { bytesToHex, hexToBytes, utf8ToBytes } from 'https://esm.sh/@noble/hashes@1/utils';
 
-    let currentHashFn = sha512;
     let currentPrivateKey = null;
     let currentPublicKey = null;
 
-    // 切换哈希算法
-    function toggleHash() {
-      const isBlake = document.getElementById('hashToggle').checked;
-      if (isBlake) {
-        currentHashFn = (msg) => blake2b(msg, { dkLen: 64 });
-        document.getElementById('hashLabel').innerHTML = `<span class="px-3 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">BLAKE2b-512</span>`;
-      } else {
-        currentHashFn = sha512;
-        document.getElementById('hashLabel').innerHTML = `<span class="px-3 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">SHA-512</span>`;
-      }
-      ed.etc.hash = currentHashFn;
+    // 设置哈希函数（同时设置 hash 和 hashSync，解决 sha512Sync not set）
+    function setHashMode(isBlake) {
+      const hashFn = isBlake 
+        ? (msg) => blake2b(msg, { dkLen: 64 })
+        : sha512;
+
+      ed.etc.hash = hashFn;      // 异步调用
+      ed.etc.hashSync = hashFn;  // 同步调用（关键修复！）
+
+      // 更新 UI 显示
+      document.getElementById('hashLabel').innerHTML = isBlake
+        ? `<span class="px-3 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">BLAKE2b-512</span>`
+        : `<span class="px-3 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">SHA-512</span>`;
     }
 
     // 生成密钥对
@@ -33,6 +34,7 @@
       try {
         const privKey = ed.utils.randomPrivateKey();
         const pubKey = await ed.getPublicKey(privKey);
+
         currentPrivateKey = privKey;
         currentPublicKey = pubKey;
 
@@ -79,29 +81,29 @@
       }
     }
 
-    // 复制到剪贴板
     function copyToClipboard(id) {
       const text = document.getElementById(id).value;
       navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板！'));
     }
 
-    // 暴露给全局（关键修复！让 onclick 可以调用）
+    // 暴露给 onclick
     window.generateKeypair = generateKeypair;
     window.signMessage = signMessage;
     window.verifySignature = verifySignature;
     window.copyToClipboard = copyToClipboard;
-    window.toggleHash = toggleHash;
 
     // 初始化
     window.onload = () => {
-      ed.etc.hash = sha512;
-      document.getElementById('hashToggle').addEventListener('change', toggleHash);
-      toggleHash(); // 默认显示 SHA-512
+      // 默认 SHA-512
+      setHashMode(false);
+      document.getElementById('hashToggle').addEventListener('change', (e) => {
+        setHashMode(e.target.checked);
+      });
     };
   </script>
 </head>
 <body class="bg-[#f8f9fa] font-sans">
-  <!-- 紫色头部 -->
+  <!-- 头部保持不变 -->
   <div class="bg-gradient-to-r from-[#6b46c0] to-[#8b5cf6] text-white py-8">
     <div class="max-w-4xl mx-auto px-6 text-center">
       <div class="flex items-center justify-center gap-3 mb-2">
@@ -116,7 +118,7 @@
   </div>
 
   <div class="max-w-4xl mx-auto px-6 py-8">
-    <!-- 就绪状态栏 + 开关 -->
+    <!-- 就绪栏 + 开关 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 flex items-center justify-between mb-8">
       <div class="flex items-center gap-3">
         <div class="w-5 h-5 bg-green-400 rounded-full flex items-center justify-center text-white text-xs">✓</div>
@@ -133,7 +135,7 @@
       </div>
     </div>
 
-    <!-- 步骤1 生成密钥对 -->
+    <!-- 步骤1 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 mb-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#f0e8ff] text-[#6b46c0] rounded-2xl flex items-center justify-center text-2xl">🔑</div>
@@ -164,7 +166,7 @@
       </div>
     </div>
 
-    <!-- 步骤2 消息签名 -->
+    <!-- 步骤2 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 mb-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#fff0e8] text-[#f59e0b] rounded-2xl flex items-center justify-center text-2xl">✍️</div>
@@ -188,7 +190,7 @@
       </div>
     </div>
 
-    <!-- 步骤3 签名验证 -->
+    <!-- 步骤3 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#d1fae5] text-[#10b981] rounded-2xl flex items-center justify-center text-2xl">✅</div>
