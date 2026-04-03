@@ -6,7 +6,7 @@
   <title>Ed25519 SchnorrQ</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="module">
-    import * as ed from 'https://esm.sh/@noble/ed25519@2';
+    import * as ed from 'https://esm.sh/@noble/ed25519';   // ← 升级为最新 v3
     import { blake2b } from 'https://esm.sh/@noble/hashes@1/blake2';
     import { sha512 } from 'https://esm.sh/@noble/hashes@1/sha512';
     import { bytesToHex, hexToBytes, utf8ToBytes } from 'https://esm.sh/@noble/hashes@1/utils';
@@ -14,16 +14,16 @@
     let currentPrivateKey = null;
     let currentPublicKey = null;
 
-    // 设置哈希算法（关键修复：使用 ed.hashes.sha512）
+    // 设置哈希模式（v3 官方 API）
     function setHashMode(isBlake) {
       const hashFn = isBlake 
         ? (msg) => blake2b(msg, { dkLen: 64 })
         : sha512;
 
-      ed.hashes.sha512 = hashFn;        // 官方推荐方式
-      ed.hashes.sha512Async = (msg) => Promise.resolve(hashFn(msg));
+      ed.hashes.sha512 = hashFn;                    // 同步
+      ed.hashes.sha512Async = (msg) => Promise.resolve(hashFn(msg));  // 异步
 
-      // 更新 UI
+      // 更新开关显示
       document.getElementById('hashLabel').innerHTML = isBlake
         ? `<span class="px-3 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">BLAKE2b-512</span>`
         : `<span class="px-3 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">SHA-512</span>`;
@@ -33,6 +33,7 @@
       try {
         const privKey = ed.utils.randomPrivateKey();
         const pubKey = await ed.getPublicKey(privKey);
+
         currentPrivateKey = privKey;
         currentPublicKey = pubKey;
 
@@ -88,8 +89,8 @@
     window.verifySignature = verifySignature;
     window.copyToClipboard = copyToClipboard;
 
-    // 初始化（模块加载完成后立即执行）
-    setHashMode(false);   // 默认 SHA-512
+    // 初始化（默认 SHA-512）
+    setHashMode(false);
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('hashToggle').addEventListener('change', (e) => {
         setHashMode(e.target.checked);
@@ -98,7 +99,7 @@
   </script>
 </head>
 <body class="bg-[#f8f9fa] font-sans">
-  <!-- 头部 -->
+  <!-- 头部（保持原样） -->
   <div class="bg-gradient-to-r from-[#6b46c0] to-[#8b5cf6] text-white py-8">
     <div class="max-w-4xl mx-auto px-6 text-center">
       <div class="flex items-center justify-center gap-3 mb-2">
@@ -218,7 +219,7 @@
     </div>
 
     <div class="text-center text-gray-400 text-xs mt-12">
-      基于 noble/ed25519 · 纯浏览器端计算 · 数据零上传
+      基于 noble/ed25519 v3 · 纯浏览器端计算 · 数据零上传
     </div>
   </div>
 </body>
