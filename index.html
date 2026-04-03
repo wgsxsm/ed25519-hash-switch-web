@@ -14,27 +14,25 @@
     let currentPrivateKey = null;
     let currentPublicKey = null;
 
-    // 设置哈希函数（同时设置 hash 和 hashSync，解决 sha512Sync not set）
+    // 设置哈希算法（关键修复：使用 ed.hashes.sha512）
     function setHashMode(isBlake) {
       const hashFn = isBlake 
         ? (msg) => blake2b(msg, { dkLen: 64 })
         : sha512;
 
-      ed.etc.hash = hashFn;      // 异步调用
-      ed.etc.hashSync = hashFn;  // 同步调用（关键修复！）
+      ed.hashes.sha512 = hashFn;        // 官方推荐方式
+      ed.hashes.sha512Async = (msg) => Promise.resolve(hashFn(msg));
 
-      // 更新 UI 显示
+      // 更新 UI
       document.getElementById('hashLabel').innerHTML = isBlake
         ? `<span class="px-3 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-700">BLAKE2b-512</span>`
         : `<span class="px-3 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">SHA-512</span>`;
     }
 
-    // 生成密钥对
     async function generateKeypair() {
       try {
         const privKey = ed.utils.randomPrivateKey();
         const pubKey = await ed.getPublicKey(privKey);
-
         currentPrivateKey = privKey;
         currentPublicKey = pubKey;
 
@@ -46,7 +44,6 @@
       }
     }
 
-    // 签名
     async function signMessage() {
       if (!currentPrivateKey) return alert('请先生成密钥对！');
       const message = document.getElementById('signMessageInput').value.trim();
@@ -61,7 +58,6 @@
       }
     }
 
-    // 验证
     async function verifySignature() {
       const pubHex = document.getElementById('verifyPubKey').value.trim();
       const sigHex = document.getElementById('verifySignature').value.trim();
@@ -92,18 +88,17 @@
     window.verifySignature = verifySignature;
     window.copyToClipboard = copyToClipboard;
 
-    // 初始化
-    window.onload = () => {
-      // 默认 SHA-512
-      setHashMode(false);
+    // 初始化（模块加载完成后立即执行）
+    setHashMode(false);   // 默认 SHA-512
+    document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('hashToggle').addEventListener('change', (e) => {
         setHashMode(e.target.checked);
       });
-    };
+    });
   </script>
 </head>
 <body class="bg-[#f8f9fa] font-sans">
-  <!-- 头部保持不变 -->
+  <!-- 头部 -->
   <div class="bg-gradient-to-r from-[#6b46c0] to-[#8b5cf6] text-white py-8">
     <div class="max-w-4xl mx-auto px-6 text-center">
       <div class="flex items-center justify-center gap-3 mb-2">
@@ -135,7 +130,7 @@
       </div>
     </div>
 
-    <!-- 步骤1 -->
+    <!-- 步骤1 生成密钥对 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 mb-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#f0e8ff] text-[#6b46c0] rounded-2xl flex items-center justify-center text-2xl">🔑</div>
@@ -166,7 +161,7 @@
       </div>
     </div>
 
-    <!-- 步骤2 -->
+    <!-- 步骤2 消息签名 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 mb-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#fff0e8] text-[#f59e0b] rounded-2xl flex items-center justify-center text-2xl">✍️</div>
@@ -190,7 +185,7 @@
       </div>
     </div>
 
-    <!-- 步骤3 -->
+    <!-- 步骤3 签名验证 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#d1fae5] text-[#10b981] rounded-2xl flex items-center justify-center text-2xl">✅</div>
