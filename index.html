@@ -6,7 +6,7 @@
   <title>Ed25519 SchnorrQ</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="module">
-    import * as ed from 'https://esm.sh/@noble/ed25519';   // 最新 v3
+    import * as ed from 'https://esm.sh/@noble/ed25519';
     import { blake2b } from 'https://esm.sh/@noble/hashes@1/blake2';
     import { sha512 } from 'https://esm.sh/@noble/hashes@1/sha512';
     import { bytesToHex, hexToBytes, utf8ToBytes } from 'https://esm.sh/@noble/hashes@1/utils';
@@ -14,7 +14,38 @@
     let currentPrivateKey = null;
     let currentPublicKey = null;
 
-    // v3 官方哈希设置方式
+    // ==================== 工具函数 ====================
+    // 清理 Hex 输入（支持 0x、前后空格、逗号、空格分隔）
+    function cleanHex(input) {
+      return input.trim()
+        .replace(/^0x/i, '')           // 去掉 0x
+        .replace(/[\s,]/g, '')         // 去掉空格和逗号
+        .toLowerCase();
+    }
+
+    // 十六进制合法性校验（新增功能）
+    function isValidHex(hexString) {
+      const cleaned = cleanHex(hexString);
+      // 只能包含 0-9 a-f
+      if (!/^[0-9a-f]*$/.test(cleaned)) return false;
+      // 长度必须为偶数（每个字节2个字符）
+      if (cleaned.length % 2 !== 0) return false;
+      return true;
+    }
+
+    // 把字符串或 Hex 转为 Uint8Array（带合法性校验）
+    function parseMessageInput(text, isHex) {
+      if (isHex) {
+        if (!isValidHex(text)) {
+          throw new Error('Hex 格式不合法！\n\n• 只能包含 0-9、a-f、A-F\n• 长度必须为偶数（每个字节2个字符）');
+        }
+        const cleaned = cleanHex(text);
+        return hexToBytes(cleaned);
+      }
+      return utf8ToBytes(text);
+    }
+
+    // 设置哈希模式
     function setHashMode(isBlake) {
       const hashFn = isBlake 
         ? (msg) => blake2b(msg, { dkLen: 64 })
@@ -28,10 +59,10 @@
         : `<span class="px-3 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-700">SHA-512</span>`;
     }
 
-    // 生成密钥对（v3 使用 randomSecretKey）
+    // ==================== 步骤1：生成/编辑密钥对 ====================
     async function generateKeypair() {
       try {
-        const privKey = ed.utils.randomSecretKey();   // ← 关键修复
+        const privKey = ed.utils.randomSecretKey();
         const pubKey = await ed.getPublicKey(privKey);
 
         currentPrivateKey = privKey;
@@ -45,36 +76,63 @@
       }
     }
 
-    async function signMessage() {
-      if (!currentPrivateKey) return alert('请先生成密钥对！');
-      const message = document.getElementById('signMessageInput').value.trim();
-      if (!message) return alert('请输入待签名消息！');
+    async function updatePubFromPriv() {
+      const privHex = cleanHex(document.getElementById('privKeyDisplay').value);
+      if (privHex.length !== 64) return alert('私钥必须是 64 位 hex（32 字节）');
 
       try {
-        const signature = await ed.sign(utf8ToBytes(message), currentPrivateKey);
-        document.getElementById('signatureDisplay').value = bytesToHex(signature);
-        document.getElementById('signResultSection').classList.remove('hidden');
+        const privKey = hexToBytes(privHex);
+        const pubKey = await ed.getPublicKey(privKey);
+        currentPrivateKey = privKey;
+        currentPublicKey = pubKey;
+        document.getElementById('pubKeyDisplay').value = bytesToHex(pubKey);
       } catch (e) {
-        alert('签名失败：' + e.message);
+        alert('私钥格式错误：' + e.message);
       }
     }
 
-    async function verifySignature() {
-      const pubHex = document.getElementById('verifyPubKey').value.trim();
-      const sigHex = document.getElementById('verifySignature').value.trim();
-      const message = document.getElementById('verifyMessage').value.trim();
+    // ==================== 步骤2：签名 ====================
+    async function signMessage() {
+      if (!currentPrivateKey) return alert('请先生成或导入密钥对！');
 
-      if (!pubHex || !sigHex || !message) return alert('请填写完整信息！');
+      const messageText = document.getElementById('signMessageInput').value.trim();
+      const isHex = document.getElementById('signFormat').value === 'hex';
+
+      if (!messageText) return alert('请输入消息！');
 
       try {
-        const isValid = await ed.verify(hexToBytes(sigHex), utf8ToBytes(message), hexToBytes(pubHex));
+        const msgBytes = parseMessageInput(messageText, isHex);
+        const signature = await ed.sign(msgBytes, currentPrivateKey);
+        document.getElementById('signatureDisplay').value = bytesToHex(signature);
+        document.getElementById('signResultSection').classList.remove('hidden');
+      } catch (e) {
+        alert(e.message);   // 显示清晰的 Hex 校验错误
+      }
+    }
+
+    // ==================== 步骤3：验证 ====================
+    async function verifySignature() {
+      const pubHex = cleanHex(document.getElementById('verifyPubKey').value);
+      const sigHex = cleanHex(document.getElementById('verifySignature').value);
+      const messageText = document.getElementById('verifyMessage').value.trim();
+      const isHex = document.getElementById('verifyFormat').value === 'hex';
+
+      if (!pubHex || !sigHex || !messageText) return alert('请填写完整信息！');
+
+      try {
+        const pubKey = hexToBytes(pubHex);
+        const signature = hexToBytes(sigHex);
+        const msgBytes = parseMessageInput(messageText, isHex);
+
+        const isValid = await ed.verify(signature, msgBytes, pubKey);
+
         const resultEl = document.getElementById('verifyResultBox');
         resultEl.classList.remove('hidden');
         resultEl.innerHTML = isValid 
           ? `<div class="flex items-center justify-center gap-3 text-green-600"><span class="text-4xl">✅</span><span class="text-2xl font-bold">验证通过</span></div>`
           : `<div class="flex items-center justify-center gap-3 text-red-600"><span class="text-4xl">❌</span><span class="text-2xl font-bold">验证失败</span></div>`;
       } catch (e) {
-        alert('验证出错：' + e.message);
+        alert(e.message);   // 显示清晰的 Hex 校验错误
       }
     }
 
@@ -83,23 +141,22 @@
       navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板！'));
     }
 
-    // 暴露给 onclick
+    // 全局暴露
     window.generateKeypair = generateKeypair;
+    window.updatePubFromPriv = updatePubFromPriv;
     window.signMessage = signMessage;
     window.verifySignature = verifySignature;
     window.copyToClipboard = copyToClipboard;
 
     // 初始化
-    setHashMode(false);   // 默认 SHA-512
+    setHashMode(false);
     document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('hashToggle').addEventListener('change', (e) => {
-        setHashMode(e.target.checked);
-      });
+      document.getElementById('hashToggle').addEventListener('change', (e) => setHashMode(e.target.checked));
     });
   </script>
 </head>
 <body class="bg-[#f8f9fa] font-sans">
-  <!-- 头部（不变） -->
+  <!-- 头部 -->
   <div class="bg-gradient-to-r from-[#6b46c0] to-[#8b5cf6] text-white py-8">
     <div class="max-w-4xl mx-auto px-6 text-center">
       <div class="flex items-center justify-center gap-3 mb-2">
@@ -131,38 +188,41 @@
       </div>
     </div>
 
-    <!-- 步骤1 生成密钥对 -->
+    <!-- 步骤1：生成/编辑密钥对 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 mb-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#f0e8ff] text-[#6b46c0] rounded-2xl flex items-center justify-center text-2xl">🔑</div>
         <div>
           <div class="text-sm font-medium text-[#6b46c0]">步骤 1</div>
-          <h2 class="text-2xl font-semibold text-gray-900">生成密钥对</h2>
+          <h2 class="text-2xl font-semibold text-gray-900">生成 / 编辑密钥对</h2>
         </div>
       </div>
-      <button onclick="generateKeypair()" class="w-full bg-[#6b46c0] hover:bg-[#5a38a8] text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 transition">
+      <button onclick="generateKeypair()" class="w-full bg-[#6b46c0] hover:bg-[#5a38a8] text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 mb-6 transition">
         <span class="text-xl">🔐</span> 生成新密钥对
       </button>
 
-      <div id="keypairSection" class="hidden mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div id="keypairSection" class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label class="block text-gray-500 text-sm mb-2">私钥（32 字节 hex）</label>
           <div class="relative">
-            <input id="privKeyDisplay" readonly class="w-full bg-gray-50 border border-gray-200 focus:border-[#6b46c0] rounded-2xl px-5 py-4 font-mono text-sm">
+            <input id="privKeyDisplay" class="w-full bg-gray-50 border border-gray-200 focus:border-[#6b46c0] rounded-2xl px-5 py-4 font-mono text-sm" placeholder="可手动编辑或粘贴">
             <button onclick="copyToClipboard('privKeyDisplay')" class="absolute right-3 top-1/2 -translate-y-1/2 px-4 py-2 text-xs bg-white border border-gray-200 rounded-xl hover:bg-gray-100">复制</button>
           </div>
+          <button onclick="updatePubFromPriv()" class="mt-3 text-[#6b46c0] text-sm flex items-center gap-1 hover:underline">
+            <span>从私钥生成公钥 →</span>
+          </button>
         </div>
         <div>
           <label class="block text-gray-500 text-sm mb-2">公钥（32 字节 hex）</label>
           <div class="relative">
-            <input id="pubKeyDisplay" readonly class="w-full bg-gray-50 border border-gray-200 focus:border-[#6b46c0] rounded-2xl px-5 py-4 font-mono text-sm">
+            <input id="pubKeyDisplay" class="w-full bg-gray-50 border border-gray-200 focus:border-[#6b46c0] rounded-2xl px-5 py-4 font-mono text-sm" placeholder="可手动编辑或粘贴">
             <button onclick="copyToClipboard('pubKeyDisplay')" class="absolute right-3 top-1/2 -translate-y-1/2 px-4 py-2 text-xs bg-white border border-gray-200 rounded-xl hover:bg-gray-100">复制</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 步骤2 消息签名 -->
+    <!-- 步骤2：消息签名 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8 mb-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#fff0e8] text-[#f59e0b] rounded-2xl flex items-center justify-center text-2xl">✍️</div>
@@ -171,8 +231,18 @@
           <h2 class="text-2xl font-semibold text-gray-900">消息签名</h2>
         </div>
       </div>
+
+      <div class="flex items-center gap-4 mb-3">
+        <span class="text-sm font-medium text-gray-600">消息格式</span>
+        <select id="signFormat" class="bg-white border border-gray-300 rounded-2xl px-4 py-2 text-sm focus:outline-none focus:border-[#f59e0b]">
+          <option value="string">字符串（UTF-8）</option>
+          <option value="hex">Hex（十六进制）</option>
+        </select>
+      </div>
+
       <label class="block text-gray-500 text-sm mb-2">待签名消息</label>
-      <textarea id="signMessageInput" rows="3" class="w-full bg-gray-50 border border-gray-200 focus:border-[#f59e0b] rounded-3xl px-5 py-4 text-sm resize-none" placeholder="Hello Ed25519!"></textarea>
+      <textarea id="signMessageInput" rows="3" class="w-full bg-gray-50 border border-gray-200 focus:border-[#f59e0b] rounded-3xl px-5 py-4 text-sm resize-none" placeholder="Hello Ed25519! 或输入 hex..."></textarea>
+
       <button onclick="signMessage()" class="mt-6 w-full bg-[#f59e0b] hover:bg-[#d97706] text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-2 transition">
         <span class="text-xl">✍️</span> 生成签名
       </button>
@@ -186,7 +256,7 @@
       </div>
     </div>
 
-    <!-- 步骤3 签名验证 -->
+    <!-- 步骤3：签名验证 -->
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
       <div class="flex items-center gap-4 mb-6">
         <div class="w-9 h-9 bg-[#d1fae5] text-[#10b981] rounded-2xl flex items-center justify-center text-2xl">✅</div>
@@ -198,16 +268,26 @@
 
       <div class="space-y-6">
         <div>
-          <label class="block text-gray-500 text-sm mb-2">公钥（64 位十六进制）</label>
-          <input id="verifyPubKey" type="text" placeholder="粘贴公钥 hex 字符串..." class="w-full bg-gray-50 border border-gray-200 focus:border-[#10b981] rounded-2xl px-5 py-4 font-mono text-sm">
+          <label class="block text-gray-500 text-sm mb-2">公钥（支持 0x、空格、逗号）</label>
+          <input id="verifyPubKey" type="text" placeholder="32 字节 hex（可带 0x 或空格）" class="w-full bg-gray-50 border border-gray-200 focus:border-[#10b981] rounded-2xl px-5 py-4 font-mono text-sm">
         </div>
+
+        <div class="flex items-center gap-4">
+          <span class="text-sm font-medium text-gray-600">消息格式</span>
+          <select id="verifyFormat" class="bg-white border border-gray-300 rounded-2xl px-4 py-2 text-sm focus:outline-none focus:border-[#10b981]">
+            <option value="string">字符串（UTF-8）</option>
+            <option value="hex">Hex（十六进制）</option>
+          </select>
+        </div>
+
         <div>
           <label class="block text-gray-500 text-sm mb-2">原始消息</label>
-          <textarea id="verifyMessage" rows="2" placeholder="输入原始消息内容..." class="w-full bg-gray-50 border border-gray-200 focus:border-[#10b981] rounded-3xl px-5 py-4 text-sm"></textarea>
+          <textarea id="verifyMessage" rows="2" placeholder="与步骤2保持一致" class="w-full bg-gray-50 border border-gray-200 focus:border-[#10b981] rounded-3xl px-5 py-4 text-sm"></textarea>
         </div>
+
         <div>
-          <label class="block text-gray-500 text-sm mb-2">签名（128 位十六进制）</label>
-          <input id="verifySignature" type="text" placeholder="粘贴签名 hex 字符串..." class="w-full bg-gray-50 border border-gray-200 focus:border-[#10b981] rounded-2xl px-5 py-4 font-mono text-sm">
+          <label class="block text-gray-500 text-sm mb-2">签名（支持 0x、空格、逗号）</label>
+          <input id="verifySignature" type="text" placeholder="64 字节 hex（可带 0x 或空格）" class="w-full bg-gray-50 border border-gray-200 focus:border-[#10b981] rounded-2xl px-5 py-4 font-mono text-sm">
         </div>
       </div>
 
