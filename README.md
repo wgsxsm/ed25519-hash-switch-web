@@ -6,7 +6,7 @@
 
 ### 在线演示（部署后）
 
-（部署到 GitHub Pages 后自动生成，例如：`https://wgsxsm.github.io/ed25519-hash-switch-web`）
+https://wgsxsm.github.io/ed25519-hash-switch-web
 
 ### 功能
 
